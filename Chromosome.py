@@ -1,6 +1,14 @@
 import math
 import random
 
+""" 
+NN: Neural Network
+TS: Tree Search 
+"""
+
+
+#TODO  Change fitness to simplicity metrics 
+
 class Chromosome:
     def __init__(self, width, height, gameInfo):
         self._genes = []
@@ -22,7 +30,7 @@ class Chromosome:
 
     def randomInitialize(self, lvlPercentage):
         totalIndex = 0
-        locations = self._gameInfo.getLocations(self._genes, 0)
+        locations = self._gameInfo.getLocations(self._genes, 0)  # Get all locations in genes
         random.shuffle(locations)
 
         nonStatisfying = self._gameInfo.getNonSatisfyMinMax(self._genes)
@@ -34,7 +42,7 @@ class Chromosome:
             nonStatisfying = self._gameInfo.getNonSatisfyMinMax(self._genes)
 
         while totalIndex < lvlPercentage * len(self._genes) * len(self._genes[0]):
-            pos = locations[totalIndex];
+            pos = locations[totalIndex]
             self._genes[pos[1]][pos[0]] = self._gameInfo.getRandomValue(self._genes)
             totalIndex += 1
 
@@ -56,7 +64,7 @@ class Chromosome:
         lines = self.__str__().split("\n")
         for l in lines:
             if len(l.strip()) == 0:
-                continue;
+                continue
             result += borderChar + l + borderChar + "\n"
 
         for j in range(0, len(self._genes[0]) + 2):
@@ -91,7 +99,7 @@ class Chromosome:
         c._genes[y][x] = value
         return c
 
-    def runAlgorithms(self, times=20):
+    def runAlgorithms(self, times=20):  # measure performance on NN and TS
         if self.getConstraints() < 1:
             return
 
@@ -110,22 +118,28 @@ class Chromosome:
         dijsktraError = self._gameInfo.getNonConnected(self._genes)
         return 1 / (math.log(minMaxError + dijsktraError + 1) + 1)
 
-    def getFitness(self, pop):
-        histogram = self._gameInfo.getHistogram(self._genes)
-        minValue = 1
-        for p in pop:
-            tempHisto = p._gameInfo.getHistogram(p._genes)
-            total = 0
-            for i in range(0,len(histogram)):
-                m = max(histogram[i], tempHisto[i])
-                value = 0
-                if m != 0:
-                    value = abs(histogram[i] - tempHisto[i]) / float(m)
-                total += value
-            total /= float(len(histogram))
-            if total < minValue:
-                minValue = total
-        return minValue
+
+    def getFitness(self):
+        prob = self._gameInfo.getEntropy(self._genes)
+        return -prob*math.log2(prob)
+
+    # ! Need change to simplicity metrics fitness = (0.2*(1-H(x))) + (0.8*(1-x_hat))
+    # def getFitness(self, pop):
+    #     histogram = self._gameInfo.getHistogram(self._genes)
+    #     minValue = 1
+    #     for p in pop:
+    #         tempHisto = p._gameInfo.getHistogram(p._genes)
+    #         total = 0
+    #         for i in range(0,len(histogram)):
+    #             m = max(histogram[i], tempHisto[i])
+    #             value = 0
+    #             if m != 0:
+    #                 value = abs(histogram[i] - tempHisto[i]) / float(m)
+    #             total += value
+    #         total /= float(len(histogram))
+    #         if total < minValue:
+    #             minValue = total
+    #     return minValue
 
     def getPopulationType(self):
         if(len(self._results["NN"]["win"]) == 0 or len(self._results["TS"]["win"]) == 0):
@@ -146,17 +160,16 @@ class Chromosome:
         return result[:-1]
 
     def writeChromosome(self, filepath, pop=None):
-        f = open(filepath, "w")
-        f.write("Type: " + str(self.getPopulationType()) + "\n")
-        f.write("Constraints: " + str(self.getConstraints()) + "\n")
-        if pop != None:
-            f.write("Fitness: " + str(self.getFitness(pop)) + "\n")
-            nnScore = (1.0 * max(self._results["NN"]["score"])) / max(1, self._gameInfo.getMaxScore(self._genes))
-            tsScore = (1.0 * max(self._results["TS"]["score"])) / max(1, self._gameInfo.getMaxScore(self._genes))
-            f.write("NN-TS Score: " + str(nnScore)  + " - " + str(tsScore) + "\n")
-        else:
-            f.write("Fitness: 0\n")
-            f.write("NN-TS Score: 0 - 0\n")
-        f.write("Level:\n")
-        f.write(self.getLevel())
-        f.close()
+        with open(filepath, "w+") as f:
+            f.write("Type: " + str(self.getPopulationType()) + "\n")
+            f.write("Constraints: " + str(self.getConstraints()) + "\n")
+            if pop != None:
+                f.write("Fitness: " + str(self.getFitness()) + "\n")
+                nnScore = (1.0 * max(self._results["NN"]["score"])) / max(1, self._gameInfo.getMaxScore(self._genes))
+                tsScore = (1.0 * max(self._results["TS"]["score"])) / max(1, self._gameInfo.getMaxScore(self._genes))
+                f.write("NN-TS Score: " + str(nnScore)  + " - " + str(tsScore) + "\n")
+            else:
+                f.write("Fitness: 0\n")
+                f.write("NN-TS Score: 0 - 0\n")
+            f.write("Level:\n")
+            f.write(self.getLevel())

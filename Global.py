@@ -1,8 +1,79 @@
-import math
-import random
 import os
+import sys
+import math
 import shutil
+import random
+import traceback
 import subprocess
+import numpy as np
+import pdb
+
+
+#A2C Dependencies
+# sys.path.append("nnrunner/a2c_gvgai")
+# import env
+# import model
+# import runner
+# import tensorflow as tf
+# import level_selector as ls
+# import baselines.ppo2.policies as policies
+# tf.logging.set_verbosity(tf.logging.FATAL)
+
+# def calculateDijkstraMap(genes, start, solids):
+#     result = []
+#     for y in range(0, len(genes)):
+#         result.append([])
+#         for x in range(0, len(genes[y])):
+#             result[y].append(-1)
+#     directions = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+#     queue = [start]
+#     result[start[1]][start[0]] = 0
+#     while(len(queue) > 0):
+#         current = queue.pop()
+#         for dir in directions:
+#             next = (current[0] + dir[0], current[1] + dir[1])
+#             if next[0] < 0 or next[0] >= len(genes[0]) or next[1] < 0 or next[1] >= len(genes):
+#                 continue
+#             if genes[next[1]][next[0]] in solids:
+#                 continue
+#             if result[next[1]][next[0]] == -1 or result[current[1]][current[0]] + 1 < result[next[1]][next[0]]:
+#                 result[next[1]][next[0]] = result[current[1]][current[0]] + 1
+#                 queue.append(next)
+#     return result
+
+# def updateIterationResults(filePath, iteration, map):
+#     file = open(filePath + "results.txt", "a")
+#     cells = map.getCells()
+#     numberOfNNFit = 0
+#     numberOfTSFit = 0
+#     for c in cells:
+#         feasible = c.getFeasibleChromosomes()
+#         for f in feasible:
+#             if max(f._results["NN"]["win"]) == 1:
+#                 numberOfNNFit += 1
+#             if max(f._results["TS"]["win"]) == 1:
+#                 numberOfTSFit += 1
+#     file.write("Iteration " + str(iteration) + ": " + str(len(map.getCells())) + " " + str(numberOfNNFit) + " " + str(numberOfTSFit) + "\n")
+#     file.close()
+
+# def writeIteration(filePath, iteration, map):
+#     os.mkdir(filePath + str(iteration) + "/")
+#     map.writeMap(filePath + str(iteration) + "/")
+
+# def deleteIteration(filePath, iteration):
+#     if os.path.exists(filePath + str(iteration) + "/"):
+#         shutil.rmtree(filePath + str(iteration) + "/")
+
+
+sys.path.append("nnrunner/a2c_gvgai")
+import env
+import model
+import runner
+import tensorflow as tf
+import level_selector as ls
+import baselines.ppo2.policies as policies
+tf.logging.set_verbosity(tf.logging.FATAL)
+
 
 def calculateDijkstraMap(genes, start, solids):
     result = []
@@ -27,27 +98,31 @@ def calculateDijkstraMap(genes, start, solids):
     return result
 
 def updateIterationResults(filePath, iteration, map):
-    file = open(filePath + "results.txt", "a")
-    cells = map.getCells()
-    numberOfNNFit = 0
-    numberOfTSFit = 0
-    for c in cells:
-        feasible = c.getFeasibleChromosomes()
-        for f in feasible:
-            if max(f._results["NN"]["win"]) == 1:
-                numberOfNNFit += 1
-            if max(f._results["TS"]["win"]) == 1:
-                numberOfTSFit += 1
-    file.write("Iteration " + str(iteration) + ": " + str(len(map.getCells())) + " " + str(numberOfNNFit) + " " + str(numberOfTSFit) + "\n")
-    file.close()
+    #print(filePath + str(iteration) + "/results.txt")
+    with open(filePath + str(iteration) + "/results.txt", "a") as file:
+        cells = map.getCells()
+        numberOfNNFit = 0
+        numberOfTSFit = 0
+        for c in cells:
+            feasible = c.getFeasibleChromosomes()
+            for f in feasible:
+                if max(f._results["NN"]["win"]) == 1:
+                    numberOfNNFit += 1
+                if max(f._results["TS"]["win"]) == 1:
+                    numberOfTSFit += 1
+        file.write("Iteration " + str(iteration) + ": "     + str(len(map.getCells())) + " " + str(numberOfNNFit) + " " + str(numberOfTSFit) + "\n")
 
 def writeIteration(filePath, iteration, map):
-    os.mkdir(filePath + str(iteration) + "/")
+    #print(filePath)
+    #print(filePath + str(iteration) + "/")
+    os.makedirs(filePath + str(iteration) + "/")
     map.writeMap(filePath + str(iteration) + "/")
 
 def deleteIteration(filePath, iteration):
     if os.path.exists(filePath + str(iteration) + "/"):
         shutil.rmtree(filePath + str(iteration) + "/")
+
+
 
 class Zelda:
     def __init__(self, lvlFilename, resultFilename):
@@ -64,6 +139,22 @@ class Zelda:
         self._scores = {"g": 1, "+": 1, "1": 2, "2": 2, "3": 2}
         self._lvlFilename = lvlFilename
         self._resultFilename = resultFilename
+        
+        #A2C Variables
+        print('load begins')
+        print(os.path.basename(lvlFilename))
+        print(os.path.dirname(lvlFilename))
+        # pdb.set_trace()
+        self._levelSelector = ls.LevelSelector.get_selector("map-elite", os.path.basename(lvlFilename), 
+                                                       os.path.dirname(os.path.abspath(lvlFilename)), max=1)
+        # pdb.set_trace()
+        self._gymEnv = env.make_gvgai_env("gvgai-zelda-lvl0-v0", 1, 0, level_selector=self._levelSelector)
+        print("make env finish")
+        self._agentModel = model.Model(policy=policies.CnnPolicy, ob_space=self._gymEnv.observation_space, 
+                                       ac_space=self._gymEnv.action_space, nenvs=1, nsteps=5)
+        print('load')
+        self._agentModel.load('nnrunner/a2c_gvgai/results/zelda-pcg-progressive/models/zelda100m/', 100000000)
+        self._gymEnv.reset()
 
     def getMaxScore(self, map):
         total = 0
@@ -179,23 +270,53 @@ class Zelda:
             if dijkstra[p[1]][p[0]] >= 0 and dijkstra[p[1]][p[0]] < nearestDoor:
                 nearestDoor = dijkstra[p[1]][p[0]]
 
-        return [round(emptyTiles / area * 10 + 0.5) - 1, min(numEnemies, 10), round(nearestEnemy / maxLength * 10 + 0.5) - 1, round(nearestKey / maxLength * 10 + 0.5) - 1, round(nearestDoor / maxLength * 10 + 0.5) - 1]
-
+        return [round(emptyTiles / area * 10 + 0.5) - 1, min(numEnemies, 10), round(nearestEnemy / maxLength * 10 + 0.5) 
+                - 1, round(nearestKey / maxLength * 10 + 0.5) - 1, round(nearestDoor / maxLength * 10 + 0.5) - 1]
+    
     def runNN(self, level, iteration=0):
-        f = open(self._lvlFilename, "w")
-        f.write(level)
-        f.close()
+        
+        print('run NN')
+        with open(self._lvlFilename, "w") as f:
+            f.write(level)
+
+        nh, nw, nc = self._gymEnv.observation_space.shape
+        obs = np.zeros((1, nh, nw, nc), dtype=np.uint8)
+        model_states = self._agentModel.initial_state
+        dones = [False]
+        while not dones[0]:
+            #Sself._gymEnv.render()
+            print('generation')
+            actions, values, model_states, _ = self._agentModel.step(obs, model_states, dones)
+            obs, rewards, dones, info = self._gymEnv.step(actions)
+
+        win = 1 if (info[0]['winner'] == 'PLAYER_WINS') else 0
+        score = info[0]['episode']['r']
+        steps = info[0]['episode']['l']
+        time = info[0]['episode']['t']
+        
+        print('remove level file')
         os.remove(self._lvlFilename)
-        return [0, 0, 0];
+        return [win, score, steps]
 
     def runTS(self, level, iteration=0):
-        f = open(self._lvlFilename, "w")
-        f.write(level)
-        f.close()
-        p = subprocess.run(["java", "-jar", "tsrunner/tsrunner.jar", "tsrunner/examples/gridphysics/" + self._name + ".txt", self._lvlFilename, self._resultFilename, str(iteration)])
-        f = open(self._resultFilename)
-        parts = f.readlines()[0].split(",")
-        f.close()
+        if not os.path.exists(self._lvlFilename.replace('/level.txt','')):
+            os.mkdir(self._lvlFilename.replace('/level.txt',''))
+            
+        with open(self._lvlFilename, "w") as f:
+            f.write(level)
+
+        e = ["java", "-jar", "tsrunner/tsrunner.jar", "tsrunner/examples/gridphysics/" + self._name + ".txt", 
+             self._lvlFilename, self._resultFilename, str(iteration)]
+        p = subprocess.run(e)
+        
+        with open(self._resultFilename) as f:
+            parts = f.readlines()[0].split(",")
         os.remove(self._lvlFilename)
         os.remove(self._resultFilename)
         return [float(parts[0]), float(parts[1]), float(parts[2])];
+
+    def __del__(self):
+        try:
+            self._gymEnv.close()
+        except:
+            pass

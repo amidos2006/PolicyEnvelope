@@ -22,7 +22,8 @@ class Cell:
                 result.append(self._fit[i])
         return result
 
-    def assignChromosome(self, c):
+    def assignChromosome(self, c): 
+        # Not meet constraints
         if c.getConstraints() < 1:
             if len(self._pop) >= self._popSize:
                 self._pop.sort(key=lambda c: c.getConstraints())
@@ -32,9 +33,9 @@ class Cell:
             if self._fit[c.getPopulationType()] == None:
                 self._fit[c.getPopulationType()] = c
             else:
-                feasible = self.getFeasibleChromosomes(c.getPopulationType())
-                old = self._fit[c.getPopulationType()].getFitness(feasible)
-                new = c.getFitness(feasible)
+                # feasible = self.getFeasibleChromosomes(c.getPopulationType())
+                old = self._fit[c.getPopulationType()].getFitness()
+                new = c.getFitness()
                 if new > old or (new == old and random.random() < 0.5):
                     self._fit[c.getPopulationType()] = c
 
@@ -86,7 +87,8 @@ class MapElite:
         return cells
 
     def getNextGeneration(self, generationSize, inbreed, crossover, mutation):
-        chromosomes = []
+        # ! seems didn't update chromosomes 
+        chromosomes = [] 
         cells = self.getCells()
         for i in range(generationSize):
             cell1 = cells[random.randrange(0, len(cells))]
@@ -96,11 +98,14 @@ class MapElite:
             p1 = cell1.getChromosome()
             p2 = cell2.getChromosome()
             if random.random() < crossover:
+         
                 child = p1.crossover(p2)
                 if random.random() < mutation:
                     child = child.mutate()
             else:
                 child = p1.mutate()
+
+            chromosomes.append(child)
         return chromosomes
 
     def updateMap(self, chromosomes, numberOfFit, popSize):

@@ -1,1 +1,0 @@
-Empty folder used for the tests
