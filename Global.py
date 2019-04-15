@@ -5,8 +5,12 @@ import shutil
 import random
 import traceback
 import subprocess
+import uuid
 import numpy as np
 import pdb
+import multiprocessing.pool
+from multiprocessing import Pool
+import multiprocessing
 
 
 #A2C Dependencies
@@ -99,7 +103,7 @@ def calculateDijkstraMap(genes, start, solids):
 
 def updateIterationResults(filePath, iteration, map):
     #print(filePath + str(iteration) + "/results.txt")
-    with open(filePath + str(iteration) + "/results.txt", "a") as file:
+    with open(filePath + "/results.txt", "a") as file:
         cells = map.getCells()
         numberOfNNFit = 0
         numberOfTSFit = 0
@@ -123,6 +127,20 @@ def deleteIteration(filePath, iteration):
         shutil.rmtree(filePath + str(iteration) + "/")
 
 
+class NoDaemonProcess(multiprocessing.Process):
+    # make 'daemon' attribute always return False
+    def _get_daemon(self):
+        return False
+    def _set_daemon(self, value):
+        pass
+    daemon = property(_get_daemon, _set_daemon)
+
+# We sub-class multiprocessing.pool.Pool instead of multiprocessing.Pool
+# because the latter is only a wrapper function, not a proper class.
+class MyPool(multiprocessing.pool.Pool):
+    Process = NoDaemonProcess
+        
+        
 
 class Zelda:
     def __init__(self, lvlFilename, resultFilename):
@@ -141,18 +159,13 @@ class Zelda:
         self._resultFilename = resultFilename
         
         #A2C Variables
-        print('load begins')
-        print(os.path.basename(lvlFilename))
-        print(os.path.dirname(lvlFilename))
         # pdb.set_trace()
         self._levelSelector = ls.LevelSelector.get_selector("map-elite", os.path.basename(lvlFilename), 
                                                        os.path.dirname(os.path.abspath(lvlFilename)), max=1)
         # pdb.set_trace()
         self._gymEnv = env.make_gvgai_env("gvgai-zelda-lvl0-v0", 1, 0, level_selector=self._levelSelector)
-        print("make env finish")
         self._agentModel = model.Model(policy=policies.CnnPolicy, ob_space=self._gymEnv.observation_space, 
                                        ac_space=self._gymEnv.action_space, nenvs=1, nsteps=5)
-        print('load')
         self._agentModel.load('nnrunner/a2c_gvgai/results/zelda-pcg-progressive/models/zelda100m/', 100000000)
         self._gymEnv.reset()
 
@@ -231,6 +244,11 @@ class Zelda:
 
         return numErrors
 
+    def getEntropy(self, map):
+        area = 1.0 * len(map) * len(map[0])
+        emptyTiles = len(self.getLocations(map, self._empty))
+        return emptyTiles/area
+    
     def getBorder(self):
         return self._solid
 
@@ -274,9 +292,11 @@ class Zelda:
                 - 1, round(nearestKey / maxLength * 10 + 0.5) - 1, round(nearestDoor / maxLength * 10 + 0.5) - 1]
     
     def runNN(self, level, iteration=0):
-        
-        print('run NN')
-        with open(self._lvlFilename, "w") as f:
+        print("runNN")
+        random = str(uuid.uuid1())
+        fileName = self._lvlFilename.replace("level.txt",random + "_level.txt")
+        # fileName = self._lvlFilename
+        with open(fileName, "w") as f:
             f.write(level)
 
         nh, nw, nc = self._gymEnv.observation_space.shape
@@ -285,7 +305,6 @@ class Zelda:
         dones = [False]
         while not dones[0]:
             #Sself._gymEnv.render()
-            print('generation')
             actions, values, model_states, _ = self._agentModel.step(obs, model_states, dones)
             obs, rewards, dones, info = self._gymEnv.step(actions)
 
@@ -294,15 +313,18 @@ class Zelda:
         steps = info[0]['episode']['l']
         time = info[0]['episode']['t']
         
-        print('remove level file')
-        os.remove(self._lvlFilename)
+        os.remove(fileName)
         return [win, score, steps]
 
     def runTS(self, level, iteration=0):
+        print("runTS")
+        random = str(uuid.uuid1())
+        fileName = self._lvlFilename.replace("level.txt",random + "_level.txt")
+        # fileName = self._lvlFilename
         if not os.path.exists(self._lvlFilename.replace('/level.txt','')):
             os.mkdir(self._lvlFilename.replace('/level.txt',''))
             
-        with open(self._lvlFilename, "w") as f:
+        with open(fileName, "w") as f:
             f.write(level)
 
         e = ["java", "-jar", "tsrunner/tsrunner.jar", "tsrunner/examples/gridphysics/" + self._name + ".txt", 
@@ -311,7 +333,7 @@ class Zelda:
         
         with open(self._resultFilename) as f:
             parts = f.readlines()[0].split(",")
-        os.remove(self._lvlFilename)
+        os.remove(fileName)
         os.remove(self._resultFilename)
         return [float(parts[0]), float(parts[1]), float(parts[2])];
 

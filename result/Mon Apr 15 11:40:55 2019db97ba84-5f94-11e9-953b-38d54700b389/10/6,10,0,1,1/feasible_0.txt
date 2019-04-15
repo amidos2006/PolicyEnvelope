@@ -1,0 +1,14 @@
+Type: 0
+Constraints: 1.0
+Fitness: 0.41495789782344106
+NN-TS Score: 0.25 - 0.0
+Level:
+wwwwwwwwwwwww
+w..13w.1....w
+w.3.g13.....w
+w122..w..3.ww
+w...wA.+ww..w
+w...w1.3..2.w
+ww.w....w...w
+w......2...2w
+wwwwwwwwwwwww

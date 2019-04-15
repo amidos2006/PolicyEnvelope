@@ -1,12 +1,18 @@
 import math
 import random
+from Global import *
+import threading
 
 """ 
 NN: Neural Network
 TS: Tree Search 
 """
+def runNN(c, level, i):
+    print("run NN")
+    c._gameInfo.runNN(level, i)
 
-
+def runTS(c, level, i):
+    c._gameInfo.runTS(level, i)
 #TODO  Change fitness to simplicity metrics 
 
 class Chromosome:
@@ -100,18 +106,32 @@ class Chromosome:
         return c
 
     def runAlgorithms(self, times=20):  # measure performance on NN and TS
+        
+        print("runs")
         if self.getConstraints() < 1:
             return
 
-        for i in range(0, times):
-            temp = self._gameInfo.runNN(self.getLevel(), i)
-            self._results["NN"]["win"].append(temp[0])
-            self._results["NN"]["score"].append(temp[1])
-            self._results["NN"]["time"].append(temp[2])
-            temp = self._gameInfo.runTS(self.getLevel(), i)
-            self._results["TS"]["win"].append(temp[0])
-            self._results["TS"]["score"].append(temp[1])
-            self._results["TS"]["time"].append(temp[2])
+        # for i in range(0, times):
+        #     # result_list = []
+        #     # pool = MyPool(2)
+        #     # print("pool")
+        #     # res1 = pool.apply_async(runNN,(self, self.getLevel(), i, ), callback = log_result)
+        #     # res2 = pool.apply_async(runTS,(self, self.getLevel(), i, ), callback = log_result)
+        #     # print(res1.get())
+        #     # print(res2.get())
+        #     # pool.close()
+        #     # pool.join()
+        #     # print(result_list)
+        #     # temp = [res[0].get(), res[1].get()]
+        #     # print(temp)
+        #     temp = self._gameInfo.runNN(self.getLevel(), i)
+        #     self._results["NN"]["win"].append(temp[0])
+        #     self._results["NN"]["score"].append(temp[1])
+        #     self._results["NN"]["time"].append(temp[2])
+        #     temp = self._gameInfo.runTS(self.getLevel(), i)
+        #     self._results["TS"]["win"].append(temp[0])
+        #     self._results["TS"]["score"].append(temp[1])
+        #     self._results["TS"]["time"].append(temp[2])
 
     def getConstraints(self):
         minMaxError = len(self._gameInfo.getNonSatisfyMinMax(self._genes))
@@ -121,6 +141,7 @@ class Chromosome:
 
     def getFitness(self):
         prob = self._gameInfo.getEntropy(self._genes)
+        # print(prob)
         return -prob*math.log2(prob)
 
     # ! Need change to simplicity metrics fitness = (0.2*(1-H(x))) + (0.8*(1-x_hat))
