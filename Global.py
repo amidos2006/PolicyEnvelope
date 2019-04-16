@@ -293,9 +293,9 @@ class Zelda:
     
     def runNN(self, level, iteration=0):
         print("runNN")
-        random = str(uuid.uuid1())
-        fileName = self._lvlFilename.replace("level.txt",random + "_level.txt")
-        # fileName = self._lvlFilename
+        # random = str(uuid.uuid1())
+        # fileName = self._lvlFilename.replace("level.txt",random + "_level.txt")
+        fileName = self._lvlFilename
         with open(fileName, "w") as f:
             f.write(level)
 
@@ -318,9 +318,9 @@ class Zelda:
 
     def runTS(self, level, iteration=0):
         print("runTS")
-        random = str(uuid.uuid1())
-        fileName = self._lvlFilename.replace("level.txt",random + "_level.txt")
-        # fileName = self._lvlFilename
+        # random = str(uuid.uuid1())
+        # fileName = self._lvlFilename.replace("level.txt",random + "_level.txt")
+        fileName = self._lvlFilename
         if not os.path.exists(self._lvlFilename.replace('/level.txt','')):
             os.mkdir(self._lvlFilename.replace('/level.txt',''))
             

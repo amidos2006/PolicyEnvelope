@@ -65,25 +65,25 @@ def parmap(f, X, nprocs=multiprocessing.cpu_count()):
 
     return [x for i, x in sorted(res)]
 
-def generator(batchSize, initializationSize, numOfTests, generationSize):
+def generator(batchSize, initializationSize, numOfTests, generationSize, iterations):
     worker_id = time.asctime() + str(uuid.uuid1())
     map = MapElite()
     chs = map.initializeMap(width, height, Zelda(testPath + worker_id + "/level.txt", testPath + worker_id + "/result.txt"), lvlPercentage, initializationSize)
     for i in range(0, iterations + 1):
-        p = MyPool(12)
+        # p = Pool(12)
         # batchSizeInWorker = split_batchSize(batchSize, chs, nums)
         # print("iteration")
         # # p.map(runAlgorithm, list(zip(chs, [numOfTests]*initializationSize)))
         # p.map(test,chs[:12])
         # p.close()
         # p.join()
-        p.starmap(Chromosome.runAlgorithms, zip(chs, [numOfTests]*initializationSize))
-        p.close()
-        p.join()
-        print("join")
+        # p.starmap(Chromosome.runAlgorithms, zip(chs, [numOfTests]*initializationSize))
+        # p.close()
+        # p.join()
+        # print("join")
         # p = MyPool(12)
-        # for c in chs:
-        #     # c.runAlgorithms(numOfTests)
+        for c in chs:
+            c.runAlgorithms(numOfTests)
         #     p.map(Chromosome.runAlgorithms,(chs,numOfTests,))
         # p.close()
         # p.join()
@@ -112,7 +112,8 @@ def args_parse():
     parser.add_argument('--n', help='worker number',type=int ,default=mp.cpu_count())
     parser.add_argument('--genSize', help='generation size',type=int ,default=1)
     parser.add_argument('--numTests', help='number of tests',type=int ,default=10)
-    parser.add_argument('--i', help='initialization size',type=int ,default=100)
+    parser.add_argument('--init', help='initialization size',type=int ,default=100)
+    parser.add_argument('--i', help='iteration size',type=int ,default=100)
     return parser
 
 if __name__ == "__main__":
@@ -125,4 +126,4 @@ if __name__ == "__main__":
     # p.starmap(generator, params)
     # p.close()
     # p.join()
-    generator(batchSize, args.i, args.numTests, args.genSize)
+    generator(batchSize, args.init, args.numTests, args.genSize, args.i)
