@@ -1,3 +1,0 @@
-Type: 0
-Constraints: 1.0
-Fitness: 0.43471806991962875

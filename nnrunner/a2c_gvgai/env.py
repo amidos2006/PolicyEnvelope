@@ -6,6 +6,9 @@ from baselines import logger
 from baselines.common.atari_wrappers import *
 from baselines.common import set_global_seeds
 from baselines.bench import Monitor
+from util import obs_space_info, obs_to_dict, dict_to_obs, copy_obs_dict
+
+
 
 
 def worker(remote, parent_remote, env_fn_wrapper, level_selector=None):
@@ -66,6 +69,120 @@ def worker(remote, parent_remote, env_fn_wrapper, level_selector=None):
         else:
             raise NotImplementedError
 
+class DummyVecEnv(VecEnv):
+    """
+    VecEnv that does runs multiple environments sequentially, that is,
+    the step and reset commands are send to one environment at a time.
+    Useful when debugging and when num_env == 1 (in the latter case,
+    avoids communication overhead)
+    """
+    def __init__(self, env_fns, spaces=None, level_selector=None):
+        """
+        Arguments:
+        env_fns: iterable of callables      functions that build environments
+        """
+        self.envs = [fn() for fn in env_fns]
+        env = self.envs[0]
+        VecEnv.__init__(self, len(env_fns), env.observation_space, env.action_space)
+        # print("------------------",ray.put(VecEnv))
+        
+        obs_space = env.observation_space
+        self.keys, shapes, dtypes = obs_space_info(obs_space)
+
+        self.buf_obs = { k: np.zeros((self.num_envs,) + tuple(shapes[k]), dtype=dtypes[k]) for k in self.keys }
+        self.buf_dones = np.zeros((self.num_envs,), dtype=np.bool)
+        self.buf_rews  = np.zeros((self.num_envs,), dtype=np.float32)
+        self.buf_infos = [{} for _ in range(self.num_envs)]
+        self.actions = None
+        self.spec = self.envs[0].spec
+
+        self.finsihed = [False for _ in range(self.num_envs)]
+        self.last_mes = [None for _ in range(self.num_envs)]
+        self.level_selector = level_selector
+
+    def step_async(self, actions):
+        listify = True
+        try:
+            if len(actions) == self.num_envs:
+                listify = False
+        except TypeError:
+            pass
+
+        if not listify:
+            self.actions = actions
+        else:
+            assert self.num_envs == 1, "actions {} is either not a list or has a wrong size - cannot match to {} environments".format(actions, self.num_envs)
+            self.actions = [actions]
+
+    def step_wait(self):
+        for e in range(self.num_envs):
+            level = None
+            if self.finsihed[e]:
+                obs, self.buf_rews[e], self.buf_dones[e], self.buf_infos[e] = zip(*self.last_mes[e])
+            else:
+                action = self.actions[e]
+                # if isinstance(self.envs[e].action_space, spaces.Discrete):
+                #    action = int(action)
+
+                obs, self.buf_rews[e], self.buf_dones[e], self.buf_infos[e] = self.envs[e].step(action)
+                if self.buf_dones[e]:
+                    if self.level_selector is not None:
+                        self.level_selector.report(level, False if self.buf_infos[e]['winner'] == 'PLAYER_LOSES' else True)
+                        level = self.level_selector.get_level()
+                        if level is not None:
+                            self.envs[e].unwrapped._setLevel(level)
+                        else:
+                            self.finsihed[e] = True
+                    obs = self.envs[e].reset()
+                    if self.finsihed[e]:
+                        self.last_mes[e] = (obs, self.buf_rews[e], False, self.buf_infos[e])
+
+                self._save_obs(e, obs)
+        return (self._obs_from_buf(), np.copy(self.buf_rews), np.copy(self.buf_dones),
+                self.buf_infos.copy())
+
+    def reset(self):
+        for e in range(self.num_envs):
+            level = None
+            if self.finsihed[e]:
+                obs, self.buf_rews[e], self.buf_dones[e], self.buf_infos[e] = zip(*self.last_mes[e])
+            else:
+                if self.level_selector is not None:
+                    level = self.level_selector.get_level()
+                    self.envs[e].unwrapped._setLevel(level)
+                obs = self.envs[e].reset()
+            self._save_obs(e, obs)
+        return self._obs_from_buf()
+
+    def _save_obs(self, e, obs):
+        for k in self.keys:
+            if k is None:
+                self.buf_obs[k][e] = obs
+            else:
+                self.buf_obs[k][e] = obs[k]
+
+    def _obs_from_buf(self):
+        return dict_to_obs(copy_obs_dict(self.buf_obs))
+
+    def get_images(self):
+        return [env.render(mode='rgb_array') for env in self.envs]
+
+    def render(self, mode='human'):
+        if self.num_envs == 1:
+            return self.envs[0].render(mode=mode)
+        else:
+            return super().render(mode=mode)
+
+    def reset_task(self):
+        for e in range(self.num_envs):
+            ob = self.envs[e].reset_task()
+            self._save_obs(e, ob)
+        return self._obs_from_buf() 
+
+    def close(self):
+        pass
+
+
 
 class SubprocVecEnv(VecEnv):
     def __init__(self, env_fns, spaces=None, level_selector=None):
@@ -80,6 +197,7 @@ class SubprocVecEnv(VecEnv):
             for (work_remote, remote, env_fn) in zip(self.work_remotes, self.remotes, env_fns)]
         for p in self.ps:
             p.daemon = True # if the main process crashes, we should not cause things to hang
+            print("start processes")
             p.start()
         for remote in self.work_remotes:
             remote.close()
@@ -156,6 +274,9 @@ def make_gvgai_env(env_id, num_env, seed, start_index=0, level_selector=None):
     
     set_global_seeds(seed)
     return SubprocVecEnv([make_env(i + start_index) for i in range(num_env)], level_selector=level_selector)
+    # print("______________________________________",ray.put(make_env(0)))
+    # print("++++++++++++++++++++++++++++++++", ray.put(DummyVecEnv([make_env(i + start_index) for i in range(num_env)])))
+    # return env
 
 
 def make_atari_env(env_id, num_env, seed, wrapper_kwargs=None, start_index=0):

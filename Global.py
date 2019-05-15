@@ -8,66 +8,8 @@ import subprocess
 import uuid
 import numpy as np
 import pdb
-import multiprocessing.pool
-from multiprocessing import Pool
 import multiprocessing
-
-
-#A2C Dependencies
-# sys.path.append("nnrunner/a2c_gvgai")
-# import env
-# import model
-# import runner
-# import tensorflow as tf
-# import level_selector as ls
-# import baselines.ppo2.policies as policies
-# tf.logging.set_verbosity(tf.logging.FATAL)
-
-# def calculateDijkstraMap(genes, start, solids):
-#     result = []
-#     for y in range(0, len(genes)):
-#         result.append([])
-#         for x in range(0, len(genes[y])):
-#             result[y].append(-1)
-#     directions = [(1, 0), (-1, 0), (0, 1), (0, -1)]
-#     queue = [start]
-#     result[start[1]][start[0]] = 0
-#     while(len(queue) > 0):
-#         current = queue.pop()
-#         for dir in directions:
-#             next = (current[0] + dir[0], current[1] + dir[1])
-#             if next[0] < 0 or next[0] >= len(genes[0]) or next[1] < 0 or next[1] >= len(genes):
-#                 continue
-#             if genes[next[1]][next[0]] in solids:
-#                 continue
-#             if result[next[1]][next[0]] == -1 or result[current[1]][current[0]] + 1 < result[next[1]][next[0]]:
-#                 result[next[1]][next[0]] = result[current[1]][current[0]] + 1
-#                 queue.append(next)
-#     return result
-
-# def updateIterationResults(filePath, iteration, map):
-#     file = open(filePath + "results.txt", "a")
-#     cells = map.getCells()
-#     numberOfNNFit = 0
-#     numberOfTSFit = 0
-#     for c in cells:
-#         feasible = c.getFeasibleChromosomes()
-#         for f in feasible:
-#             if max(f._results["NN"]["win"]) == 1:
-#                 numberOfNNFit += 1
-#             if max(f._results["TS"]["win"]) == 1:
-#                 numberOfTSFit += 1
-#     file.write("Iteration " + str(iteration) + ": " + str(len(map.getCells())) + " " + str(numberOfNNFit) + " " + str(numberOfTSFit) + "\n")
-#     file.close()
-
-# def writeIteration(filePath, iteration, map):
-#     os.mkdir(filePath + str(iteration) + "/")
-#     map.writeMap(filePath + str(iteration) + "/")
-
-# def deleteIteration(filePath, iteration):
-#     if os.path.exists(filePath + str(iteration) + "/"):
-#         shutil.rmtree(filePath + str(iteration) + "/")
-
+from functools import partial
 
 sys.path.append("nnrunner/a2c_gvgai")
 import env
@@ -101,8 +43,75 @@ def calculateDijkstraMap(genes, start, solids):
                 queue.append(next)
     return result
 
+def connectedComponent(genes, target, replace):
+    
+    count = 0
+    
+    def addBorder(lvl):
+        expand = np.array([1]*lvl.shape[0])[:,None]
+        lvl = np.concatenate((expand, lvl, expand), axis=1)
+        lvl = np.vstack(([1]*(lvl.shape[1]), lvl, [1]*(lvl.shape[1])))
+        return lvl
+    
+    def rp(lvl, Q, node, target, replace):
+        if lvl[node[0],node[1]] == target:
+            lvl[node[0],node[1]] = replace
+            Q.append(node)
+
+    lvl = np.array(genes.copy())
+    lvl = addBorder(lvl)
+    
+    if target == replace or target not in lvl:
+        return 0
+    
+    Q = []
+    rp(lvl, Q, list(zip(*np.where(lvl==target)))[0], target, replace)
+    while len(Q) != 0:
+        x,y = Q[0]
+        Q.pop(0)
+        nb = []
+        # up left corner
+        if x == 0 and y == 0 :
+            nb = [[x,y+1], [x+1,y], [x+1,y+1]]
+        # up right corner
+        elif x == 0 and y == lvl.shape[1]-1 :
+            nb = [[x,y-1], [x+1,y-1], [x+1,y]]
+        # bottom left corner
+        elif x == lvl.shape[0]-1 and y == 0:
+            nb = [[x-1,y], [x-1,y+1], [x,y+1]]
+        # bottom right corner
+        elif x == lvl.shape[0]-1 and y == lvl.shape[1]-1 :
+            nb = [[x-1,y-1], [x,y-1], [x-1,y]]
+        # up 
+        elif x == 0 :
+            nb = [[x,y-1], [x+1,y-1], [x+1,y], [x+1,y+1], [x,y+1]]
+        # bottom
+        elif x == lvl.shape[0]-1 :
+            nb = [[x-1,y-1], [x,y-1], [x-1,y], [x-1,y+1], [x,y+1]]
+        # left
+        elif y == 0 :
+            nb = [[x-1,y], [x-1,y+1], [x,y+1], [x+1,y+1], [x+1,y]]
+        # right
+        elif y == lvl.shape[1]-1 :
+            nb = [[x-1,y-1], [x-1,y], [x,y-1], [x+1,y-1], [x+1,y]]
+        else:
+            nb = [[x-1,y-1], [x-1,y], [x-1,y+1], [x,y-1], [x,y+1], [x+1,y-1], [x+1,y], [x+1,y+1]]
+        for i in nb:
+            rp(lvl, Q, i, target, replace)
+        if len(Q) == 0:
+            count += 1
+            targets = list(zip(*np.where(lvl==target)))
+            if targets:
+                rp(lvl, Q, targets[0], target, replace)
+                
+            
+    return count
+    
+
 def updateIterationResults(filePath, iteration, map):
     #print(filePath + str(iteration) + "/results.txt")
+    if not os.path.exists(filePath):
+        os.makedirs(filePath)
     with open(filePath + "/results.txt", "a") as file:
         cells = map.getCells()
         numberOfNNFit = 0
@@ -127,27 +136,17 @@ def deleteIteration(filePath, iteration):
         shutil.rmtree(filePath + str(iteration) + "/")
 
 
-class NoDaemonProcess(multiprocessing.Process):
-    # make 'daemon' attribute always return False
-    def _get_daemon(self):
-        return False
-    def _set_daemon(self, value):
-        pass
-    daemon = property(_get_daemon, _set_daemon)
-
-# We sub-class multiprocessing.pool.Pool instead of multiprocessing.Pool
-# because the latter is only a wrapper function, not a proper class.
-class MyPool(multiprocessing.pool.Pool):
-    Process = NoDaemonProcess
         
         
 
 class Zelda:
-    def __init__(self, lvlFilename, resultFilename):
+    def __init__(self, lvlFilename, resultFilename, numOfTests):
         self._name = "zelda"
         self._charMapping = [".", "w", "A", "g", "+", "1", "2", "3"]
+        # self._charMapping = [".", "w", "A", "g", "+"]
         self._minValues = {"g": 1, "+": 1, "A": 1}
         self._maxValues = {"g": 1, "+": 1, "A": 1, "1": 5, "2": 5, "3": 5}
+        # self._maxValues = {"g": 1, "+": 1, "A": 1}
         self._avatar = 2
         self._solid = 1
         self._empty = 0
@@ -155,17 +154,17 @@ class Zelda:
         self._door = 3
         self._key = 4
         self._scores = {"g": 1, "+": 1, "1": 2, "2": 2, "3": 2}
+        # self._scores = {"g": 1, "+": 1}
         self._lvlFilename = lvlFilename
         self._resultFilename = resultFilename
         
         #A2C Variables
-        # pdb.set_trace()
         self._levelSelector = ls.LevelSelector.get_selector("map-elite", os.path.basename(lvlFilename), 
                                                        os.path.dirname(os.path.abspath(lvlFilename)), max=1)
-        # pdb.set_trace()
-        self._gymEnv = env.make_gvgai_env("gvgai-zelda-lvl0-v0", 1, 0, level_selector=self._levelSelector)
+        # self._levelSelector = ls.MapEliteSelector(os.path.dirname(os.path.abspath(lvlFilename)), os.path.basename(lvlFilename)
+        self._gymEnv = env.make_gvgai_env("gvgai-zelda-lvl0-v0", numOfTests, 0, level_selector=self._levelSelector)
         self._agentModel = model.Model(policy=policies.CnnPolicy, ob_space=self._gymEnv.observation_space, 
-                                       ac_space=self._gymEnv.action_space, nenvs=1, nsteps=5)
+                                       ac_space=self._gymEnv.action_space, nenvs=numOfTests, nsteps=5)
         self._agentModel.load('nnrunner/a2c_gvgai/results/zelda-pcg-progressive/models/zelda100m/', 100000000)
         self._gymEnv.reset()
 
@@ -208,6 +207,9 @@ class Zelda:
                 number = len(self.getLocations(map, map[y][x]))
                 if (ch in self._minValues and number < self._minValues[ch]) or (ch in self._maxValues and number > self._maxValues[ch]):
                     result.add(map[y][x])
+        for k,v in self._minValues.items():
+            if not any(self.getCharToIndex(k) in s for s in map):
+                result.add(self.getCharToIndex(k))
         return list(result)
 
     def getNonConnected(self, map):
@@ -246,7 +248,7 @@ class Zelda:
 
     def getEntropy(self, map):
         area = 1.0 * len(map) * len(map[0])
-        emptyTiles = len(self.getLocations(map, self._empty))
+        emptyTiles = 1.0 * len(self.getLocations(map, self._empty))
         return emptyTiles/area
     
     def getBorder(self):
@@ -258,7 +260,7 @@ class Zelda:
     def getIndexToChar(self, index):
         return self._charMapping[index]
 
-    def getDimensions(self, map):
+    def getRecords(self, map):
         area = 1.0 * len(map) * len(map[0])
         maxLength = 1.0 * (len(map) + len(map[0]))
         emptyTiles = len(self.getLocations(map, self._empty))
@@ -266,9 +268,14 @@ class Zelda:
         for e in self._enemies:
             locs = self.getLocations(map, e)
             numEnemies += len(locs)
+        
+        paths = calculateDijkstraMap(map, self.getLocations(map, self._empty)[np.random.randint(emptyTiles)], [self._solid])
+        maxPaths = calculateDijkstraMap(map, np.unravel_index(np.argmax(paths), np.array(paths).shape)[::-1], [self._solid])
+        longestPath = np.max(maxPaths)
+        numConnectedComponent = connectedComponent(map, self._solid, -1)
 
         if len(self.getLocations(map, self._avatar)) == 0:
-            return [round(emptyTiles / area * 10 + 0.5) - 1, min(numEnemies, 10), 0, 0, 0]
+            return [emptyTiles , numEnemies, 0, 0, 0, longestPath, numConnectedComponent]
 
         dijkstra = calculateDijkstraMap(map, self.getLocations(map, self._avatar)[0], [self._solid])
         nearestEnemy = maxLength
@@ -287,55 +294,96 @@ class Zelda:
         for p in locs:
             if dijkstra[p[1]][p[0]] >= 0 and dijkstra[p[1]][p[0]] < nearestDoor:
                 nearestDoor = dijkstra[p[1]][p[0]]
-
-        return [round(emptyTiles / area * 10 + 0.5) - 1, min(numEnemies, 10), round(nearestEnemy / maxLength * 10 + 0.5) 
-                - 1, round(nearestKey / maxLength * 10 + 0.5) - 1, round(nearestDoor / maxLength * 10 + 0.5) - 1]
+        
+        
+        return [emptyTiles, numEnemies, nearestEnemy, nearestKey, nearestDoor, longestPath, numConnectedComponent]
     
-    def runNN(self, level, iteration=0):
+    def getDimensions(self, map):
+        area = 1.0 * len(map) * len(map[0])
+        maxLength = 1.0 * (len(map) + len(map[0]))
+        raw = self.getRecords(map)
+        
+        if len(self.getLocations(map, self._avatar)) == 0:
+            return [round(raw[0] / area * 10 + 0.5) - 1, min(raw[1], 10), 0, 0, 0, raw[5]]
+
+        return [round(raw[0] / area * 10 + 0.5) - 1, min(raw[1], 10), round(raw[2] / maxLength * 10 + 0.5) 
+                - 1, round(raw[3] / maxLength * 10 + 0.5) - 1, round(raw[4] / maxLength * 10 + 0.5) - 1, raw[5]]
+        
+    
+    def runNN(self, level, numOfTests, iteration=0):
         print("runNN")
-        # random = str(uuid.uuid1())
+        random = str(uuid.uuid4())
         # fileName = self._lvlFilename.replace("level.txt",random + "_level.txt")
         fileName = self._lvlFilename
         with open(fileName, "w") as f:
             f.write(level)
 
         nh, nw, nc = self._gymEnv.observation_space.shape
-        obs = np.zeros((1, nh, nw, nc), dtype=np.uint8)
+        obs = np.zeros((numOfTests, nh, nw, nc), dtype=np.uint8)
         model_states = self._agentModel.initial_state
-        dones = [False]
-        while not dones[0]:
+        done = np.array([False] * numOfTests)
+        dones = [False] * numOfTests
+        infos = [False] * numOfTests
+        while not all(done):
             #Sself._gymEnv.render()
             actions, values, model_states, _ = self._agentModel.step(obs, model_states, dones)
+            # print("agent")
             obs, rewards, dones, info = self._gymEnv.step(actions)
-
-        win = 1 if (info[0]['winner'] == 'PLAYER_WINS') else 0
-        score = info[0]['episode']['r']
-        steps = info[0]['episode']['l']
-        time = info[0]['episode']['t']
-        
+            # print("env")
+            done[np.where(dones!=False)] = True
+            for i in np.where(dones!=False)[0].tolist():
+                if not infos[i]:
+                    # print(info)
+                    infos[i] = info[i]
+        # print(infos)
+        win = [1 if (i['winner'] == 'PLAYER_WINS') else 0 for i in infos]
+        score = [i['episode']['r'] for i in infos]
+        steps = [i['episode']['l'] for i in infos]
+        time = [i['episode']['t'] for i in infos]
+        # print("finish")
         os.remove(fileName)
-        return [win, score, steps]
+        print(win)
+        print(score)
+        print(steps)
+        return np.array([win, score, steps])
 
-    def runTS(self, level, iteration=0):
+    def runTS(self, level, numOfTests,iteration=0):
         print("runTS")
-        # random = str(uuid.uuid1())
+        random = str(uuid.uuid4())
         # fileName = self._lvlFilename.replace("level.txt",random + "_level.txt")
-        fileName = self._lvlFilename
+        levelFileName = self._lvlFilename
+        resultFileName = self._resultFilename
+        parts = [False] * numOfTests
+        ps = []
+        
         if not os.path.exists(self._lvlFilename.replace('/level.txt','')):
             os.mkdir(self._lvlFilename.replace('/level.txt',''))
             
-        with open(fileName, "w") as f:
-            f.write(level)
-
-        e = ["java", "-jar", "tsrunner/tsrunner.jar", "tsrunner/examples/gridphysics/" + self._name + ".txt", 
-             self._lvlFilename, self._resultFilename, str(iteration)]
-        p = subprocess.run(e)
+        levelfiles = [levelFileName.replace("level.txt",str(i) + "_level.txt") for i in range(numOfTests)]
+        resultfiles = [resultFileName.replace("result.txt",str(i) + "_result.txt") for i in range(numOfTests)]
         
-        with open(self._resultFilename) as f:
-            parts = f.readlines()[0].split(",")
-        os.remove(fileName)
-        os.remove(self._resultFilename)
-        return [float(parts[0]), float(parts[1]), float(parts[2])];
+        for i in range(numOfTests):
+            with open(levelfiles[i], "w") as f:
+                f.write(level)
+        
+        for i in range(numOfTests):
+
+            e = ["java", "-jar", "tsrunner.jar", "examples/gridphysics/" + self._name + "_" + str(i) +".txt", 
+                 "../" + levelfiles[i], "../"+ resultfiles[i], str(i)]
+            p = subprocess.Popen(e,cwd="tsrunner/", stderr= subprocess.DEVNULL, stdout = subprocess.DEVNULL)
+            
+            ps.append(p)
+            
+        for p in ps:
+            p.wait()
+            
+        for i in range(numOfTests):
+            with open(resultfiles[i]) as f:
+                parts[i] = f.readlines()[0].split(",")
+                
+            os.remove(levelfiles[i])
+            os.remove(resultfiles[i])
+        return np.array([[float(i[0]), float(i[1]), float(i[2])] for i in parts])
 
     def __del__(self):
         try:

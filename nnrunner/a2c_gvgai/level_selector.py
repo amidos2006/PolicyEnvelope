@@ -166,6 +166,7 @@ class MapEliteSelector(LevelSelector):
         super().__init__(dir, game, max=max)
         #self.level = os.path.dirname(os.path.realpath(__file__)) + "/data/test-levels/" + game + "/mapelite.txt"
         self.level = os.path.join(dir, game)
+        print("selector")
         print(self.level)
 
     def get_level(self):
