@@ -35,40 +35,22 @@ generationSize = 10
 
 def generator(checkpoint, initializationSize, numOfTests, generationSize, iterations, evolve_rounds):
     worker_id = time.asctime() + " checkpoint_" +str(checkpoint) + " init_" + str(initializationSize) + " numTests_" + str(numOfTests) + " genSize_" + str(generationSize) + " i_" + str(iterations) + " e_" + str(evolve_rounds)
-    steps = [i*evolve_rounds for i in range(iterations//evolve_rounds)]
-    ranges = [np.arange(s,s+evolve_rounds) if i!=len(steps)-1 else range(s, iterations) for i,s in enumerate(steps)]   
-    evolve_period = np.array([j for i,j in enumerate(ranges) if i!=0 and i!=len(ranges)-1 and i%2 == 1])
-    print(evolve_period)
     map = MapElite()
     chs = map.initializeMap(width, height, Zelda(testPath + worker_id + "/level.txt", testPath + worker_id + "/result.txt", numOfTests), lvlPercentage, initializationSize)
-    cache = []
     for i in range(0, iterations + 1):
         print("iteration: ", i)
-        print("infeasible pops: ", len(cache))
-        print("pops: ",len(map.getPopulation()))
-        if i in evolve_period:
-            if len(map.getPopulation()) >= 2:
-                cache += map.getNextGeneration(generationSize, min(inbreed-0.2,0), crossover, max(mutation+0.2,1), eva=True)
-                if i+1 not in evolve_period:
-                    chs = cache.copy()
-                    print(len(chs))
-                    print(len([1 for c in chs if c.getConstraints()<1])/len(chs))
-                    chs += map.getNextGeneration(generationSize, inbreed, crossover, mutation)
-                    cache = []
-                continue
-
-        print('chromesome lenght: ',len(chs))        
+        print('chromesome lenght: ',len(chs)) 
+        print("pops: ",len(map.getPopulation()))       
         for c in chs:
             c.runAlgorithms(numOfTests)                
 
         print("join")
-        map.updateMap(chs)
+        map.updateMap(chs, populationSize)
         if i%checkpoint == 0 or i == iterations:
             writeIteration(resultPath + worker_id + "/", i, map)
         updateIterationResults(resultPath + worker_id + "/", i, map) # update results in results file
         # deleteIteration(resultPath + worker_id + "/", i-1)
-        if i+1 not in evolve_period:
-            chs = map.getNextGeneration(generationSize, inbreed, crossover, mutation)
+        chs = map.getNextGeneration(generationSize, inbreed, crossover, mutation)
 
 def args_parse():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)

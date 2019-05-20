@@ -74,13 +74,16 @@ class MapElite:
         chromosomes = [] 
         if not eva:
             cells = self.getCells()
-            for i in range(generationSize):
-                cell1 = cells[random.randrange(0, len(cells))]
-                cell2 = cells[random.randrange(0, len(cells))]
+            pop = self.population
+            for _ in range(generationSize):
+                if len(pop) == 0:
+                    cell1, cell2 = random.sample(cells, k=2)
+                    p1 = cell1.getChromosome()
+                    p2 = cell2.getChromosome()
+                else:
+                    p1, p2 = random.sample([cells[random.randrange(0, len(cells))].getChromosome(), random.choice(pop)], k=2)
                 if random.random() < inbreed:
-                    cell2 = cell1
-                p1 = cell1.getChromosome()
-                p2 = cell2.getChromosome()
+                    p2 = p1
                 if random.random() < crossover:
             
                     child = p1.crossover(p2)
@@ -92,8 +95,8 @@ class MapElite:
                 chromosomes.append(child)
         else:
             pop = self.population
-            for i in range(generationSize):
-                p1, p2 = random.choices(pop, k=2)
+            for _ in range(generationSize):
+                p1, p2 = random.sample(pop, k=2)
                 if random.random() < inbreed:
                     p2 = p1
                 if random.random() < crossover:
@@ -106,12 +109,15 @@ class MapElite:
                 chromosomes.append(child)
         return chromosomes
 
-    def updateMap(self, chromosomes):
+    def updateMap(self, chromosomes, popSize):
         print("update")
         for c in chromosomes:
             if c.getConstraints() < 1:
                 print("in constraints")
-                self.population.append(c)
+                if len(self.population) >= popSize:
+                    self.population.sort(key=lambda x:x.getConstraints())
+                    del self.population[0]
+                self.population.append(c)     
             else:
                 dims = c.getDimensions()
                 key = ",".join(str(d) for d in dims)
