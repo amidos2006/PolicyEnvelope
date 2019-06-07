@@ -11,8 +11,6 @@ import time
 import itertools
 import pdb
 import copy
-from joblib import Parallel, delayed
-import level_selector as ls
 
 width = 11
 height = 7
@@ -21,7 +19,7 @@ testPath = "test/"
 inputFile = "test/level"
 outputFile = "test/result"
 resultPath = "result/"
-lvlPercentage = 0.1
+lvlPercentage = 0.5
 batchSize = 100   
 numberOfFit = 4
 populationSize = 50

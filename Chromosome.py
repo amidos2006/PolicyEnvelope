@@ -107,7 +107,7 @@ class Chromosome:
             return
         level = self.getLevel()
 
-        res1 = self._gameInfo.runNN(level, times)
+        res1 , _ = self._gameInfo.runNN(level, times)
         self._results["NN"]["win"] = res1[0]
         self._results["NN"]["score"] = res1[1]
         self._results["NN"]["time"] = res1[2]
@@ -184,13 +184,13 @@ class Chromosome:
             tsTime = np.array([maxTime])
         
         
-        print(maxScore)
-        print(nnWin, type(nnWin))
-        print(tsWin, type(tsWin))
-        print(nnScore, type(nnScore))
-        print(tsScore, type(tsScore))
-        print(nnTime, type(nnTime))
-        print(tsTime, type(tsTime))   
+        # print(maxScore)
+        # print(nnWin, type(nnWin))
+        # print(tsWin, type(tsWin))
+        # print(nnScore, type(nnScore))
+        # print(tsScore, type(tsScore))
+        # print(nnTime, type(nnTime))
+        # print(tsTime, type(tsTime))   
         
         if np.any(nnWin):
             print(nnScore[np.where(nnWin!=0)])
