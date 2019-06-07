@@ -36,8 +36,10 @@ def worker(remote, parent_remote, env_fn_wrapper, level_selector=None):
                         else:
                             level_selector.report(level, False if info['winner'] == 'PLAYER_LOSES' else True)
                         level = level_selector.get_level()
+                        # print(level)
                         if level is not None:
-                            env.unwrapped._setLevel(level)
+                            # env.unwrapped._setLevel(level)
+                            pass
                         else:
                             finished = True
                     ob = env.reset()
@@ -47,13 +49,20 @@ def worker(remote, parent_remote, env_fn_wrapper, level_selector=None):
                 remote.send((ob, reward, done, info))
         elif cmd == 'reset':
             if finished:
+                print("finished")
                 remote.send(last_mes)
             else:
                 if level_selector is not None:
                     level = level_selector.get_level()
                     env.unwrapped._setLevel(level)
+                    # with open(level) as f:
+                    #     print("\n")
+                    #     print("level")
+                    #     print(f.read())
+                    #     print("\n")
                 ob = env.reset()
                 score = 0
+                print("not finished")
                 remote.send(ob)
         elif cmd == 'reset_task':
             ob = env.reset_task()
@@ -63,7 +72,9 @@ def worker(remote, parent_remote, env_fn_wrapper, level_selector=None):
             score = 0
             break
         elif cmd == 'render':
-            env.render()
+            # env.render(**data)
+            # env.render(mode='human')
+            remote.send(env.render(**data))
         elif cmd == 'get_spaces':
             remote.send((env.observation_space, env.action_space))
         else:
@@ -165,7 +176,10 @@ class DummyVecEnv(VecEnv):
         return dict_to_obs(copy_obs_dict(self.buf_obs))
 
     def get_images(self):
-        return [env.render(mode='rgb_array') for env in self.envs]
+        for pipe in self.remotes:
+            pipe.send(('render', None))
+        imgs = [pipe.recv() for pipe in self.remotes]
+        return imgs
 
     def render(self, mode='human'):
         if self.num_envs == 1:
@@ -222,10 +236,10 @@ class SubprocVecEnv(VecEnv):
             remote.send(('reset', None))
         return np.stack([remote.recv() for remote in self.remotes])
 
-    def render(self):
-        if self.render:
-            for remote in self.remotes:
-                remote.send(('render', None))
+    # def render(self):
+    #     print("render")
+    #     for remote in self.remotes:
+    #         remote.send(('render', {'mode':'human'}))
 
     def reset_task(self):
         for remote in self.remotes:
@@ -243,6 +257,12 @@ class SubprocVecEnv(VecEnv):
         for p in self.ps:
             p.join()
         self.closed = True
+
+    def get_images(self):
+        for remote in self.remotes:
+            remote.send(('render', {'mode':'rgb_array'}))
+        imgs = [remote.recv() for remote in self.remotes]
+        return imgs
 
 
 def wrap_gvgai(env, frame_stack=False, scale=False, clip_rewards=False, noop_reset=False, frame_skip=False, scale_float=False):
@@ -268,15 +288,12 @@ def make_gvgai_env(env_id, num_env, seed, start_index=0, level_selector=None):
         def _thunk():
             env = gym.make(env_id)
             env.seed(seed + rank)
-            env = Monitor(env, logger.get_dir() and os.path.join(logger.get_dir(), str(rank)))
+            env = Monitor(env, logger.get_dir() and os.path.join(logger.get_dir(), str(rank)), allow_early_resets=True)
             return wrap_gvgai(env)
         return _thunk
     
     set_global_seeds(seed)
     return SubprocVecEnv([make_env(i + start_index) for i in range(num_env)], level_selector=level_selector)
-    # print("______________________________________",ray.put(make_env(0)))
-    # print("++++++++++++++++++++++++++++++++", ray.put(DummyVecEnv([make_env(i + start_index) for i in range(num_env)])))
-    # return env
 
 
 def make_atari_env(env_id, num_env, seed, wrapper_kwargs=None, start_index=0):

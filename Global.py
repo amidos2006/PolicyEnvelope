@@ -10,6 +10,7 @@ import numpy as np
 import pdb
 import multiprocessing
 from functools import partial
+import matplotlib.pyplot as plt
 
 sys.path.append("nnrunner/a2c_gvgai")
 import env
@@ -18,6 +19,7 @@ import runner
 import tensorflow as tf
 import level_selector as ls
 import baselines.ppo2.policies as policies
+from gym.envs.classic_control import rendering
 tf.logging.set_verbosity(tf.logging.FATAL)
 
 
@@ -166,7 +168,10 @@ class Zelda:
         self._agentModel = model.Model(policy=policies.CnnPolicy, ob_space=self._gymEnv.observation_space, 
                                        ac_space=self._gymEnv.action_space, nenvs=numOfTests, nsteps=5)
         self._agentModel.load('nnrunner/a2c_gvgai/results/zelda-pcg-progressive/models/zelda100m/', 100000000)
-        self._gymEnv.reset()
+        # self._gymEnv.reset()
+        self._reset = False
+
+        # self.runNN("wwwwwwwwwwwww\nwA.......w..w\nw..w........w\nw...w...w.+ww\nwww.w2..wwwww\nw.......w.g.w\nw.2.........w\nw.....2.....w\nwwwwwwwwwwwww", numOfTests)
 
     def getMaxScore(self, map):
         total = 0
@@ -312,40 +317,67 @@ class Zelda:
     
     def runNN(self, level, numOfTests, iteration=0):
         print("runNN")
-        random = str(uuid.uuid4())
+        viewer = rendering.SimpleImageViewer()
         # fileName = self._lvlFilename.replace("level.txt",random + "_level.txt")
         fileName = self._lvlFilename
+        print(level, fileName)
         with open(fileName, "w") as f:
             f.write(level)
-
+        # if not self._reset:
+        #     print("reset")
+        #     self._gymEnv.reset()
+        #     self._reset = True
+        self._gymEnv.reset()
         nh, nw, nc = self._gymEnv.observation_space.shape
         obs = np.zeros((numOfTests, nh, nw, nc), dtype=np.uint8)
         model_states = self._agentModel.initial_state
         done = np.array([False] * numOfTests)
         dones = [False] * numOfTests
         infos = [False] * numOfTests
+        frames = np.array([np.array(None)] * numOfTests)
         while not all(done):
-            #Sself._gymEnv.render()
+            # print(type(self._gymEnv.envs[0]))            
+
             actions, values, model_states, _ = self._agentModel.step(obs, model_states, dones)
-            # print("agent")
             obs, rewards, dones, info = self._gymEnv.step(actions)
-            # print("env")
+            # self._gymEnv.render()
+            # self._gymEnv.get_images()
             done[np.where(dones!=False)] = True
             for i in np.where(dones!=False)[0].tolist():
                 if not infos[i]:
-                    # print(info)
                     infos[i] = info[i]
+
+            imgs = self._gymEnv.get_images()
+            for i,img in enumerate(imgs):
+                # viewer.imshow(img)
+                if not done[i]:
+                    if np.any(frames[i]) == None:
+                        frames[i] = img[None,:,:,:]
+                    else:
+                        frames[i] = np.concatenate((frames[i], img[None,:,:,:]))
         # print(infos)
+        
         win = [1 if (i['winner'] == 'PLAYER_WINS') else 0 for i in infos]
         score = [i['episode']['r'] for i in infos]
         steps = [i['episode']['l'] for i in infos]
         time = [i['episode']['t'] for i in infos]
-        # print("finish")
+
         os.remove(fileName)
         print(win)
         print(score)
         print(steps)
-        return np.array([win, score, steps])
+        viewer.close()
+        # frames = frames[np.array(win)==1]
+        
+        # for i in frames:
+        # print(frames[0])
+        plt.ion()
+        for i,j in enumerate(frames):
+            plt.figure()
+            plt.title(level.split("\n")[1])
+            plt.imshow(j[0])
+        
+        return np.array([win, score, steps]), frames
 
     def runTS(self, level, numOfTests,iteration=0):
         print("runTS")
@@ -359,7 +391,7 @@ class Zelda:
         if not os.path.exists(self._lvlFilename.replace('/level.txt','')):
             os.mkdir(self._lvlFilename.replace('/level.txt',''))
             
-        levelfiles = [levelFileName.replace("level.txt",str(i) + "_level.txt") for i in range(numOfTests)]
+        levelfiles = [levelFileName.replace("level.txt",str(i) + "_level.txt") for i in range(numOfTests)] 
         resultfiles = [resultFileName.replace("result.txt",str(i) + "_result.txt") for i in range(numOfTests)]
         
         for i in range(numOfTests):
